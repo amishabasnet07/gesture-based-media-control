@@ -1,6 +1,6 @@
 import cv2
 import time
-import HandTrackinModule as htm
+import HandTrackingModule as htm
 
 pTime = 0
 cap = cv2.VideoCapture(0)

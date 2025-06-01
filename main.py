@@ -6,11 +6,12 @@ import math
 from pygame import mixer
 import HandTrackingModule as htm
 
+
 # Init
 mixer.init()
 song_folder = "songs"
 songs = os.listdir(song_folder)
-current_song_index = 0
+current_song_index = 1
 mixer.music.load(os.path.join(song_folder, songs[current_song_index]))
 mixer.music.play()
 
