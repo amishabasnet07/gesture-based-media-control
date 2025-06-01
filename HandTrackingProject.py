@@ -7,6 +7,23 @@ import math
 import time
 from tkinter import filedialog, Tk, messagebox
 
+# Save/Load resume position
+RESUME_FILE = "resume_info.txt"
+
+def save_resume_info(index, pos):
+    with open(RESUME_FILE, "w") as f:
+        f.write(f"{index},{pos}")
+
+def load_resume_info():
+    if os.path.exists(RESUME_FILE):
+        with open(RESUME_FILE, "r") as f:
+            try:
+                index, pos = f.read().split(",")
+                return int(index), float(pos)
+            except:
+                return 0, 0
+    return 0, 0
+
 # Select music folder
 root = Tk()
 root.withdraw()
@@ -24,9 +41,8 @@ if not songs:
 pygame.mixer.init()
 volume = 0.5
 pygame.mixer.music.set_volume(volume)
-song_index = 0
+song_index, pause_pos = load_resume_info()
 paused = True
-pause_pos = 0  # In seconds
 
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.7)
@@ -38,11 +54,13 @@ last_lock_state = None
 lock_change_time = 0
 lock_cooldown = 1.0
 scroll_offset = 0
-swipe_start_x = None
-swipe_start_time = 0
+
+# Swipe tracking
 swipe_in_progress = False
-swipe_threshold = 50
-swipe_cooldown = 0.5
+swipe_start_x = 0
+swipe_start_time = 0
+swipe_threshold = 50  # Lowered threshold for better swipe detection
+swipe_cooldown = 1.0
 last_swipe_time = 0
 
 def distance(p1, p2):
@@ -64,6 +82,7 @@ def play_song(index, start_pos=0):
     pygame.mixer.music.load(os.path.join(folder, songs[index]))
     pygame.mixer.music.play(start=start_pos)
     pygame.mixer.music.set_volume(volume)
+    print(f"Playing song: {songs[index]} at position {start_pos}")
 
 while True:
     success, img = cap.read()
@@ -86,29 +105,27 @@ while True:
 
         current_time = time.time()
 
-        # Lock/unlock volume with RIGHT hand only
         for i, side in enumerate(hand_sides):
+            hand = hand_data[i]
+
+            # Lock/Unlock Volume with RIGHT hand
             if side == "Right":
-                hand = hand_data[i]
                 thumb_up = finger_up(hand, 4, 3)
                 index_up = finger_up(hand, 8, 6)
-
                 if current_time - lock_change_time > lock_cooldown:
-                    if thumb_up and not index_up:
-                        if last_lock_state != 'locked':
-                            volume_locked = True
-                            last_lock_state = 'locked'
-                            lock_change_time = current_time
-                    elif index_up and not thumb_up:
-                        if last_lock_state != 'unlocked':
-                            volume_locked = False
-                            last_lock_state = 'unlocked'
-                            lock_change_time = current_time
+                    if thumb_up and not index_up and last_lock_state != 'locked':
+                        volume_locked = True
+                        last_lock_state = 'locked'
+                        lock_change_time = current_time
+                        print("Volume locked")
+                    elif index_up and not thumb_up and last_lock_state != 'unlocked':
+                        volume_locked = False
+                        last_lock_state = 'unlocked'
+                        lock_change_time = current_time
+                        print("Volume unlocked")
 
-        # Volume control with LEFT hand (if not locked)
-        for i, side in enumerate(hand_sides):
+            # Volume Control with LEFT hand
             if side == "Left" and not volume_locked:
-                hand = hand_data[i]
                 d = distance(hand[4], hand[8])
                 vol = np.clip(np.interp(d, [30, 200], [0.0, 1.0]), 0.0, 1.0)
                 volume = vol
@@ -119,29 +136,44 @@ while True:
                 cv2.putText(img, f'{int(vol * 100)}%', (50, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
                 cv2.line(img, hand[4], hand[8], (255, 0, 255), 3)
 
-        # Play/Pause and Swipe with LEFT hand only
-        for i, side in enumerate(hand_sides):
+            # Play/Pause, Swipe for LEFT hand
             if side == "Left":
-                hand = hand_data[i]
+                cx = hand[8][0]
 
-                if all_fingers_closed(hand) and not paused:
-                    pause_pos = pygame.mixer.music.get_pos() / 1000.0  # in seconds
+                # Play if index and middle fingers up
+                if finger_up(hand, 8, 6) and finger_up(hand, 12, 10) and paused:
+                    play_song(song_index, pause_pos)
+                    paused = False
+                    time.sleep(0.3)
+
+                # Pause if all fingers closed
+                elif all_fingers_closed(hand) and not paused:
+                    pause_pos = pygame.mixer.music.get_pos() / 1000.0
+                    save_resume_info(song_index, pause_pos)
                     pygame.mixer.music.pause()
                     paused = True
                     time.sleep(0.3)
 
+                # Swipe (index only up)
                 elif index_only_up(hand):
-                    cx = hand[8][0]
                     if not swipe_in_progress:
                         swipe_start_x = cx
                         swipe_start_time = current_time
                         swipe_in_progress = True
-
-                    elif current_time - swipe_start_time < swipe_cooldown:
+                        print(f"Swipe started at x={swipe_start_x}")
+                    else:
                         dx = cx - swipe_start_x
-                        if abs(dx) > swipe_threshold and (current_time - last_swipe_time > 1):
-                            song_index = (song_index + 1) % len(songs) if dx > 0 else (song_index - 1 + len(songs)) % len(songs)
+                        print(f"Swipe progress dx={dx}")
+
+                        if abs(dx) > swipe_threshold and (current_time - last_swipe_time > swipe_cooldown):
+                            if dx > 0:
+                                song_index = (song_index + 1) % len(songs)
+                                print("Swiped Right -> Next song")
+                            else:
+                                song_index = (song_index - 1 + len(songs)) % len(songs)
+                                print("Swiped Left -> Previous song")
                             pause_pos = 0
+                            save_resume_info(song_index, pause_pos)
                             play_song(song_index)
                             paused = False
                             last_swipe_time = current_time
@@ -149,13 +181,6 @@ while True:
                             time.sleep(0.3)
                 else:
                     swipe_in_progress = False
-
-                # Auto-play with index and middle finger open
-                if finger_up(hand, 8, 6) and finger_up(hand, 12, 10) and paused:
-                    play_song(song_index, pause_pos)
-                    paused = False
-                    time.sleep(0.3)
-                break
     else:
         text = "Show Your Hand Gesture"
         (text_w, text_h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 3)
@@ -173,6 +198,10 @@ while True:
     cv2.imshow("Gesture Music Controller", img)
     if cv2.waitKey(1) == 27:
         break
+
+if not paused:
+    pause_pos = pygame.mixer.music.get_pos() / 1000.0
+save_resume_info(song_index, pause_pos)
 
 cap.release()
 cv2.destroyAllWindows()
