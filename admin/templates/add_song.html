@@ -1,18 +1,12 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Add Song</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <div class="container">
-        <h2>Add New Song</h2>
-        <form method="post" enctype="multipart/form-data">
-            <input type="text" name="name" placeholder="Song Name" required>
-            <input type="file" name="file" required>
-            <button type="submit">Add Song</button>
-        </form>
-        <p><a href="{{ url_for('dashboard') }}">Back to Dashboard</a></p>
+{% extends "base.html" %}
+{% block title %}Upload Song{% endblock %}
+{% block content %}
+<h2>Upload New Song</h2>
+<form method="POST" enctype="multipart/form-data">
+    <div class="mb-3">
+        <label for="file" class="form-label">Select MP3 File</label>
+        <input type="file" name="file" class="form-control" required>
     </div>
-</body>
-</html>
+    <button type="submit" class="btn btn-success">Upload</button>
+</form>
+{% endblock %}
